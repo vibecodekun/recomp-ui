@@ -46,11 +46,18 @@ void launcher_debug_init(void) {
 
 bool launcher_capture_png(const char* path, int w, int h) {
     if (w <= 0 || h <= 0) return false;
-    unsigned char* px = (unsigned char*)malloc((size_t)w * h * 3);
+    unsigned char* px = (unsigned char*)malloc((size_t)w * h * 4);
     if (!px) return false;
 
+    // RGBA: the one format glReadPixels must take in GLES 2 (Mesa refuses
+    // GL_RGB there and leaves the buffer as it was), packed to RGB after.
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    for (size_t i = 0, n = (size_t)w * h; i < n; ++i) {
+        px[i * 3 + 0] = px[i * 4 + 0];
+        px[i * 3 + 1] = px[i * 4 + 1];
+        px[i * 3 + 2] = px[i * 4 + 2];
+    }
 
     // GL origin is bottom-left; PNG wants top-down. Flip rows in place.
     const size_t stride = (size_t)w * 3;
