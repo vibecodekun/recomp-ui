@@ -327,7 +327,13 @@ typedef struct {
     const char* rom_patch_note;
     const char* rom_patch_cache_dir;
     const char* rom_patch_required_sha1;
-    char      rom_patch_status[256];
+    char      rom_patch_status[512];
+    /* The host's verdict on the status line: 0 none yet, 1 playable, 2 not,
+     * 3 playable with a caution. */
+    int       rom_patch_verdict;
+    int     (*rom_patch_check)(const uint8_t* source, size_t source_len,
+                               const uint8_t* patched, size_t patched_len,
+                               char* message, size_t message_cap);
     char      rom_patch_prepared_path[512];
     char      rom_patch_prepared_sha1[41];
     // Game-supplied aspect vocabulary (GameInfo.aspect_labels): when set,

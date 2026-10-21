@@ -10785,8 +10785,11 @@ static void draw_mod_features(LauncherModel* m, const LauncherTheme& th) {
 static void draw_rom_patch(LauncherModel* m, const LauncherTheme& th) {
     if (!m || !m->rom_patch_supported) return;
 
-    if (ImGui::BeginChild("##rom_patch", ImVec2(0, px(170)),
-                          ImGuiChildFlags_Borders)) {
+    /* A host that applies the patch itself says what it does in a line that
+     * wraps to any length (rom_patch_check), so the box grows with it. */
+    if (ImGui::BeginChild("##rom_patch", ImVec2(0, m->rom_patch_check ? 0 : px(170)),
+                          ImGuiChildFlags_Borders |
+                              (m->rom_patch_check ? ImGuiChildFlags_AutoResizeY : 0))) {
         eyebrow("ROM PATCH");
         bool enabled = m->s.rom_patch_enabled != 0;
         if (ImGui::Checkbox(ui_text("Enable ROM patch"), &enabled))
@@ -10820,8 +10823,14 @@ static void draw_rom_patch(LauncherModel* m, const LauncherTheme& th) {
             ImGui::SetTooltip("%s", m->s.rom_patch_path);
         if (m->rom_patch_note && m->rom_patch_note[0])
             ImGui::TextWrapped("%s", m->rom_patch_note);
-        if (m->rom_patch_status[0])
-            ImGui::TextColored(col(th.accent), "%s", m->rom_patch_status);
+        if (m->rom_patch_status[0]) {
+            const LngColor tone = m->rom_patch_verdict == 1 ? th.good
+                                : m->rom_patch_verdict >= 2 ? th.warn
+                                : th.accent;
+            ImGui::PushStyleColor(ImGuiCol_Text, col(tone));
+            ImGui::TextWrapped("%s", m->rom_patch_status);
+            ImGui::PopStyleColor();
+        }
     }
     ImGui::EndChild();
 }

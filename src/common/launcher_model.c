@@ -411,6 +411,7 @@ void launcher_model_init(LauncherModel* m,
         m->rom_patch_note       = game->rom_patch_note;
         m->rom_patch_cache_dir  = game->rom_patch_cache_dir;
         m->rom_patch_required_sha1 = game->rom_patch_required_sha1;
+        m->rom_patch_check      = game->rom_patch_check;
 #if RECOMP_UI_ENABLE_MODS
         m->mods                 = game->mods;
 #else
@@ -1123,6 +1124,8 @@ int launcher_model_autofill_sibling_discs(LauncherModel* m) {
     return filled;
 }
 
+static bool lm_check_host_patch(LauncherModel* m);
+
 void launcher_model_set_rom(LauncherModel* m, const char* path) {
     if (lm_is_sbi_path(path)) {
         char mounted[sizeof(m->rom_full)] = {0};
@@ -1232,6 +1235,7 @@ void launcher_model_set_rom(LauncherModel* m, const char* path) {
 
     run_verify(m);
     update_msu1_patch_available(m);
+    if (m->rom_patch_check) lm_check_host_patch(m);
 }
 
 // Disc-verdict (verify.mode==1 systems, e.g. PSX): run the SystemProfile's
@@ -3422,6 +3426,52 @@ static bool lm_read_whole_file(const char* path, uint8_t** out_data, size_t* out
     return true;
 }
 
+/* Host-applied patches (GameInfo.rom_patch_check): apply the chosen patch to
+ * the verified ROM in memory and show what the host says it does. */
+static bool lm_check_host_patch(LauncherModel* m) {
+    m->rom_patch_verdict = 0;
+    m->rom_patch_status[0] = '\0';
+    if (!m->rom_patch_supported || !m->rom_patch_check ||
+        !m->s.rom_patch_enabled || !m->s.rom_patch_path[0]) return true;
+    if (!launcher_model_rom_verified(m)) {
+        safe_copy(m->rom_patch_status, sizeof(m->rom_patch_status),
+                  "Pick the game's ROM first: the patch is applied to it.");
+        m->rom_patch_verdict = 2;
+        return false;
+    }
+    uint8_t* source = NULL; size_t source_len = 0;
+    uint8_t* patch = NULL; size_t patch_len = 0;
+    if (!lm_read_whole_file(m->rom_full, &source, &source_len) ||
+        !lm_read_whole_file(m->s.rom_patch_path, &patch, &patch_len)) {
+        free(source); free(patch);
+        safe_copy(m->rom_patch_status, sizeof(m->rom_patch_status),
+                  "Could not read the ROM or the patch file.");
+        m->rom_patch_verdict = 2;
+        return false;
+    }
+    uint8_t* output = NULL; size_t output_len = 0;
+    const bool applied = rom_patch_apply(source, source_len, patch, patch_len,
+                                         &output, &output_len);
+    free(patch);
+    if (!applied) {
+        free(source);
+        safe_copy(m->rom_patch_status, sizeof(m->rom_patch_status),
+                  "This patch does not apply to this ROM: it is for another game "
+                  "or version, or the file is damaged.");
+        m->rom_patch_verdict = 2;
+        return false;
+    }
+    char message[sizeof(m->rom_patch_status)];
+    message[0] = '\0';
+    const int ok = m->rom_patch_check(source, source_len, output, output_len,
+                                      message, sizeof(message));
+    free(source);
+    free(output);
+    safe_copy(m->rom_patch_status, sizeof(m->rom_patch_status), message);
+    m->rom_patch_verdict = ok == 2 ? 3 : ok ? 1 : 2;
+    return ok != 0;
+}
+
 void launcher_model_set_rom_patch(LauncherModel* m, const char* path) {
     if (!m || !m->rom_patch_supported) return;
     safe_copy(m->s.rom_patch_path, sizeof(m->s.rom_patch_path),
@@ -3430,6 +3480,8 @@ void launcher_model_set_rom_patch(LauncherModel* m, const char* path) {
     m->rom_patch_prepared_path[0] = '\0';
     m->rom_patch_prepared_sha1[0] = '\0';
     m->rom_patch_status[0] = '\0';
+    m->rom_patch_verdict = 0;
+    lm_check_host_patch(m);
 }
 
 void launcher_model_clear_rom_patch(LauncherModel* m) {
@@ -3442,6 +3494,7 @@ void launcher_model_clear_rom_patch(LauncherModel* m) {
     m->rom_patch_prepared_path[0] = '\0';
     m->rom_patch_prepared_sha1[0] = '\0';
     m->rom_patch_status[0] = '\0';
+    m->rom_patch_verdict = 0;
 }
 
 void launcher_model_toggle_rom_patch(LauncherModel* m) {
@@ -3455,6 +3508,7 @@ void launcher_model_toggle_rom_patch(LauncherModel* m) {
     m->s.rom_patch_enabled = m->s.rom_patch_enabled ? 0 : 1;
     m->rom_patch_prepared_path[0] = '\0';
     m->rom_patch_prepared_sha1[0] = '\0';
+    if (m->rom_patch_check) lm_check_host_patch(m);
 }
 
 static const char* lm_path_extension(const char* path) {
@@ -3468,6 +3522,16 @@ static const char* lm_path_extension(const char* path) {
 }
 
 bool launcher_model_prepare_rom_patch(LauncherModel* m) {
+    if (m && m->rom_patch_supported && m->rom_patch_check) {
+        /* The host applies it at boot: launch the stock ROM. */
+        m->rom_patch_prepared_path[0] = '\0';
+        m->rom_patch_prepared_sha1[0] = '\0';
+        safe_copy(m->s.rom_patch_source_path,
+                  sizeof(m->s.rom_patch_source_path), m->rom_full);
+        m->s.rom_patch_sha1[0] = '\0';
+        m->s.rom_patch_crc32[0] = '\0';
+        return lm_check_host_patch(m);
+    }
     if (!m || !m->rom_patch_supported || !m->s.rom_patch_enabled) {
         if (m) {
             m->rom_patch_prepared_path[0] = '\0';

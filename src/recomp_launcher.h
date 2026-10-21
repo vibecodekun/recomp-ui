@@ -1912,6 +1912,20 @@ typedef struct RecompLauncherCGameInfo {
      * console whose runtime cannot snapshot-and-restore a frame keeps
      * exactly today's settings surface. Appended for ABI stability. */
     int has_run_ahead;
+
+    /* ROM patch applied by the host (with rom_patch_supported). The launcher
+     * applies the chosen patch to the verified ROM in memory only to ask this
+     * what it does, shows the answer under the patch as soon as one is picked
+     * (and again at Play), and launches the stock ROM: the host applies the
+     * patch itself at boot, from Settings.rom_patch_path, so nothing is
+     * cached and rom_patch_cache_dir is unused. Return 1 when the patched
+     * game can be played (the message reads as information), 2 when it can
+     * with a caution (the message reads as a warning), 0 to keep Play from
+     * starting it (the message is the reason). NULL keeps the cached
+     * effective-image path above. Appended for ABI stability. */
+    int (*rom_patch_check)(const uint8_t* source, size_t source_len,
+                           const uint8_t* patched, size_t patched_len,
+                           char* message, size_t message_cap);
 } RecompLauncherCGameInfo;
 
 /* recomp_launcher_run_window return codes */
